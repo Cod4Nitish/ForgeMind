@@ -13,9 +13,10 @@ export function makeFinalizeNode(deps: AgentDeps) {
 
     if (firstError) {
       finalResponse = `ForgeMind could not complete the request. ${firstError.message}`;
-    } else if (state.workflowDecision?.action === "continue") {
-      finalResponse =
-        "ForgeMind analyzed the request and determined that the workflow should continue to the external engineering tools.";
+    } else if (state.workflowDecision?.action === "continue" && state.githubRun?.status === "success") {
+      const count = state.githubRun.issueCount;
+      const { owner, name } = deps.config.github;
+      finalResponse = `ForgeMind retrieved ${count} open GitHub issue${count === 1 ? "" : "s"} from ${owner}/${name} through Swytchcode.`;
     } else {
       finalResponse = `ForgeMind analyzed the request and determined that no external engineering action is required. ${state.workflowDecision?.reason ?? ""}`.trim();
     }

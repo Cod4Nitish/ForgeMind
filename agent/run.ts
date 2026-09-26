@@ -11,6 +11,7 @@ export type AgentRunResult = {
   intent?: string;
   plan: string[];
   decision?: Decision;
+  github?: { status: "success" | "failed"; issueCount: number };
   summary: string;
   events: AgentEvent[];
   errors: AgentError[];
@@ -42,6 +43,7 @@ export async function runForgeMind(
     intent: state.understanding?.intent,
     plan: state.requestPlan?.steps ?? [],
     decision: state.workflowDecision,
+    github: state.githubRun ? { status: state.githubRun.status, issueCount: state.githubRun.issueCount } : undefined,
     summary: state.finalResponse ?? "",
     events: state.events,
     errors: state.errors,

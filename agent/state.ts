@@ -3,6 +3,17 @@ import { z } from "zod";
 import { AgentErrorSchema } from "./errors";
 import { AgentEventSchema } from "./events";
 import { DecisionSchema, RequestPlanSchema, RequestUnderstandingSchema } from "./schemas";
+import { GitHubIssueSchema } from "./swytchcode/github";
+import { SWYTCH_ERROR_CATEGORIES } from "./swytchcode/types";
+
+export const ToolRunSchema = z
+  .object({
+    status: z.enum(["success", "failed"]),
+    issueCount: z.number().int().nonnegative(),
+    skippedCount: z.number().int().nonnegative(),
+    errorCategory: z.enum(SWYTCH_ERROR_CATEGORIES).optional(),
+  })
+  .strict();
 
 /**
  * ForgeMind's explicit graph state. Every field is typed, serializable and
@@ -15,6 +26,9 @@ export const ForgeMindState = new StateSchema({
   understanding: RequestUnderstandingSchema.optional(),
   requestPlan: RequestPlanSchema.optional(),
   workflowDecision: DecisionSchema.optional(),
+
+  githubRun: ToolRunSchema.optional(),
+  githubIssues: z.array(GitHubIssueSchema).optional(),
 
   finalResponse: z.string().optional(),
 

@@ -6,6 +6,7 @@ export const AGENT_ERROR_CODES = [
   "model_error",
   "model_refusal",
   "invalid_model_output",
+  "tool_error",
   "graph_error",
 ] as const;
 

@@ -2,16 +2,17 @@ import { describe, expect, it } from "vitest";
 import { ConfigError } from "@/agent/errors";
 import { handleAgentRequest } from "@/lib/api/handle-agent-request";
 import { MAX_MESSAGE_LENGTH, MAX_REQUEST_BYTES } from "@/lib/api/agent-request";
-import { FakeModel, fixedNow } from "../helpers/fake-model";
+import { FakeModel } from "../helpers/fake-model";
+import { makeDeps } from "../helpers/fixtures";
 
-const okDeps = () => ({
-  model: new FakeModel({
-    request_understanding: { intent: "Explain ForgeMind", requestedActions: ["explain"] },
-    request_plan: { steps: ["Explain capabilities"] },
-    workflow_decision: { action: "finish", reason: "No tools needed." },
-  }),
-  now: fixedNow,
-});
+const okDeps = () =>
+  makeDeps({
+    model: new FakeModel({
+      request_understanding: { intent: "Explain ForgeMind", requestedActions: ["explain"] },
+      request_plan: { steps: ["Explain capabilities"] },
+      workflow_decision: { action: "finish", reason: "No tools needed." },
+    }),
+  });
 
 function post(body: string, contentType = "application/json") {
   return new Request("http://localhost/api/agent", {
@@ -82,16 +83,13 @@ describe("POST /api/agent validation", () => {
   });
 
   it("returns a safe 500 when the workflow crashes", async () => {
-    const res = await handleAgentRequest(post(JSON.stringify({ message: "hi there" })), () => ({
-      model: {
-        generate: () => {
-          throw new Error("unused");
+    const res = await handleAgentRequest(post(JSON.stringify({ message: "hi there" })), () =>
+      makeDeps({
+        now: () => {
+          throw new Error("clock exploded at /srv/secret/path");
         },
-      },
-      now: () => {
-        throw new Error("clock exploded at /srv/secret/path");
-      },
-    }));
+      }),
+    );
     expect(res.status).toBe(500);
     const text = await res.text();
     expect(text).toContain("internal_error");

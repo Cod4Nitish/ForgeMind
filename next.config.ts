@@ -7,6 +7,9 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.join(__dirname),
   },
+  // The Swytchcode runtime spawns the Swytchcode CLI; load it with native
+  // Node `require` instead of bundling it into the server build.
+  serverExternalPackages: ["@swytchcode/runtime"],
 };
 
 export default nextConfig;
