@@ -23,8 +23,11 @@ type CommandPanelProps = {
   textareaRef: Ref<HTMLTextAreaElement>;
 };
 
-/** Key names are not identifiers, so they use the sans caption token (spec §1). */
-const kbd = "rounded-xs border border-border bg-surface-elevated px-1.5 text-caption font-medium text-foreground-secondary";
+/**
+ * Key names are not identifiers, so they use the sans caption token (spec §1).
+ * `font-sans` is explicit because preflight gives `<kbd>` the mono stack.
+ */
+const kbd = "rounded-xs border border-border bg-surface-elevated px-1.5 font-sans text-caption font-medium text-foreground-secondary";
 
 export function CommandPanel({
   value,
