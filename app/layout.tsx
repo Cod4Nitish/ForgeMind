@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -17,6 +17,14 @@ export const metadata: Metadata = {
   description: "AI Software Engineer agent for GitHub, Jira and Slack workflows.",
 };
 
+export const viewport: Viewport = {
+  // sRGB hex of `--background` (oklch(0.165 0.012 255)) in app/globals.css. The
+  // browser chrome needs a literal color; this is the only raw color outside
+  // globals.css — keep the two in sync.
+  themeColor: "#0b0f14",
+  colorScheme: "dark",
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
@@ -25,7 +33,7 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="flex min-h-full flex-col bg-background text-foreground">{children}</body>
     </html>
   );
 }

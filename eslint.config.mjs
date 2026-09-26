@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Local tool state (e.g. agent worktrees) is not part of the app.
+    ".claude/**",
+    // Vercel CLI build output (generated, gitignored).
+    ".vercel/**",
   ]),
 ]);
 

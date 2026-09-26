@@ -44,6 +44,7 @@ Thumbs.db
 .swytchcode/**/*.lock
 .swytchcode/audit/
 .swytchcode/logs/
+.swytchcode/workspace.json
 
 # credentials
 *.pem
@@ -52,3 +53,6 @@ credentials.json
 
 # local agent worktrees (Claude Code)
 .claude/worktrees/
+
+# local browser-automation output
+.playwright-mcp/

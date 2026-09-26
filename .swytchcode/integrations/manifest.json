@@ -45,7 +45,7 @@
   "Jira.jira@v1": {
     "version": "v1",
     "sandbox_endpoint": "http://localhost",
-    "production_endpoint": "https://your-domain.atlassian.net",
+    "production_endpoint": "https://api.atlassian.com/ex/jira/94cc0861-9b4b-4aa7-afba-3aaab87d01d1",
     "methods": 616,
     "auth": {
       "provider_slug": "Jira",
