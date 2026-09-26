@@ -4,6 +4,10 @@
 
 Built for **Build with Swytchcode, Gurgaon Edition**, Track 1: AI Software Engineer.
 
+### 🚀 Live demo: **[forgemind-ashy.vercel.app](https://forgemind-ashy.vercel.app)**
+
+Open it and press **Execute**. The public deployment runs in **Demo sandbox** mode: the real LangGraph workflow runs end to end against simulated GitHub, Jira and Slack data, so nothing is sent to external systems. See [Deployment](#20-deployment).
+
 ![Next.js](https://img.shields.io/badge/Next.js-16-black) ![LangGraph.js](https://img.shields.io/badge/LangGraph.js-1.4-blue) ![Claude](https://img.shields.io/badge/Claude-Opus%205-orange) ![Swytchcode](https://img.shields.io/badge/execution-Swytchcode-purple) ![Tests](https://img.shields.io/badge/tests-vitest-green)
 
 ![ForgeMind Command Center: final result](docs/assets/screenshots/06-final-result.png)
@@ -342,6 +346,7 @@ All variables are **server-only**. None use the `NEXT_PUBLIC_` prefix, and none 
 | `ANTHROPIC_MODEL` | no | Overrides the default model `claude-opus-5` |
 | `SWYTCHCODE_TOKEN` | headless only | Swytchcode service token for CI and servers (secret). Locally, `swytchcode login` is used instead |
 | `SWYTCHCODE_BIN` | no | Path override for the Swytchcode CLI binary |
+| `FORGEMIND_MODE` | no | `live` or `demo`. If unset, ForgeMind runs live only when its credentials are present, and otherwise uses the demo sandbox |
 | `FORGEMIND_GITHUB_REPOSITORY` | yes | The only repository ForgeMind reads, as `owner/repo` |
 | `FORGEMIND_JIRA_PROJECT` | for Jira | Jira project key for new tasks (use a test project) |
 | `FORGEMIND_SLACK_CHANNEL` | for Slack | Channel ID or quoted `"#channel-name"` (dotenv treats an unquoted `#` as a comment) |
@@ -419,8 +424,9 @@ The demo video is not linked here yet. A link will be added once it is published
 
 ## 20. Deployment
 
-- **Live UI:** <https://forgemind-ashy.vercel.app> (Vercel). The Command Center page and `GET /api/health` are verified.
-- **Agent on the hosted deployment is not enabled.** Runs need `ANTHROPIC_API_KEY`, Swytchcode credentials and the Swytchcode CLI in the server environment. These are deliberately not configured on the public URL, because `/api/agent` has no access control yet. Agent runs are performed locally.
+- **Live demo:** <https://forgemind-ashy.vercel.app> (Vercel Hobby, always on). The full workflow runs from the browser.
+- **Demo sandbox mode.** The public URL has no live credentials, because `/api/agent` has no access control yet. It runs in demo mode ([`agent/demo.ts`](agent/demo.ts)). The real graph, schema validation, routing and safety checks all run unchanged. Only the reasoning model and the Swytchcode executor are replaced: the model returns deterministic, schema-valid reasoning, and the executor simulates GitHub, Jira and Slack. The header shows **Mode: Demo sandbox**, and `GET /api/health` reports `"mode": "demo"`.
+- **Live mode** turns on when `ANTHROPIC_API_KEY` and `SWYTCHCODE_TOKEN` are set, or when `FORGEMIND_MODE=live`. Live runs on the hosted deployment also need the Swytchcode CLI in the server environment. Agent runs with real integrations are currently performed locally.
 - To deploy your own instance:
   1. Import the repo in Vercel.
   2. Set the environment variables as server-side secrets (never `NEXT_PUBLIC_`).

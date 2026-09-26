@@ -9,16 +9,22 @@ import { Chip, StatusBadge } from "@/components/ui/badge";
 
 const INTEGRATIONS = ["GitHub", "Jira", "Slack"] as const;
 
-/** Client `GET /api/health` on mount: Checking… → Online / Unreachable. */
-function useSystemHealth(): SystemHealth {
+type RunMode = "live" | "demo";
+
+/** Client `GET /api/health` on mount: Checking… → Online / Unreachable, plus the server's run mode. */
+function useSystemHealth(): { health: SystemHealth; mode?: RunMode } {
   const [health, setHealth] = useState<SystemHealth>("checking");
+  const [mode, setMode] = useState<RunMode>();
 
   useEffect(() => {
     const controller = new AbortController();
     fetch("/api/health", { cache: "no-store", headers: { Accept: "application/json" }, signal: controller.signal })
       .then(async (response) => {
         const body: unknown = await response.json().catch(() => null);
-        if (!controller.signal.aborted) setHealth(interpretHealth(response.ok, body));
+        if (controller.signal.aborted) return;
+        setHealth(interpretHealth(response.ok, body));
+        const reported = (body as { mode?: unknown } | null)?.mode;
+        if (reported === "live" || reported === "demo") setMode(reported);
       })
       .catch(() => {
         if (!controller.signal.aborted) setHealth("unreachable");
@@ -26,7 +32,7 @@ function useSystemHealth(): SystemHealth {
     return () => controller.abort();
   }, []);
 
-  return health;
+  return { health, mode };
 }
 
 /** A visible "SYSTEM" / "RUN" label at every width, so the two chips are never ambiguous. */
@@ -61,7 +67,8 @@ type AppHeaderProps = {
  * no endpoint reports that), live System health and the current run status.
  */
 export function AppHeader({ brand, runStatus }: AppHeaderProps) {
-  const health = SYSTEM_HEALTH[useSystemHealth()];
+  const system = useSystemHealth();
+  const health = SYSTEM_HEALTH[system.health];
   // Primary is reserved (spec §3) for Execute and the active workflow node /
   // executing banner, so the header chip shows "Executing" in a neutral tone.
   const runTone: DisplayTone = runStatus.tone === "running" ? "neutral" : runStatus.tone;
@@ -95,6 +102,19 @@ export function AppHeader({ brand, runStatus }: AppHeaderProps) {
             <span className="text-caption text-foreground-muted">via Swytchcode</span>
           </div>
           <LabelledChip label="System" tone={health.tone} text={health.label} className="order-2 sm:order-none" />
+          {system.mode && (
+            <p
+              className="order-2 flex items-center gap-2 sm:order-none"
+              title={
+                system.mode === "demo"
+                  ? "Demo mode: the real agent workflow runs against simulated GitHub, Jira and Slack data. Nothing is sent to external systems."
+                  : "Live mode: actions run against the configured GitHub, Jira and Slack workspaces."
+              }
+            >
+              <span className="text-label text-foreground-muted uppercase">Mode</span>
+              <StatusBadge tone={system.mode === "demo" ? "warning" : "success"} label={system.mode === "demo" ? "Demo sandbox" : "Live"} shape="chip" />
+            </p>
+          )}
         </div>
 
         <div className="order-3 sm:order-2 lg:order-3">
