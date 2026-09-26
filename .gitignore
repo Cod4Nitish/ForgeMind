@@ -49,3 +49,6 @@ Thumbs.db
 *.pem
 *.key
 credentials.json
+
+# local agent worktrees (Claude Code)
+.claude/worktrees/
