@@ -4,6 +4,8 @@ import { MockSwytchExecutor } from "./mock-executor";
 
 export const TEST_CONFIG: AgentDeps["config"] = {
   github: { owner: "forgemind-demo", name: "demo-issues" },
+  jira: { projectKey: "FORGE" },
+  slack: { channel: "#forgemind-demo" },
 };
 
 /** Raw GitHub REST "list issues" items for the locked demo scenario. */

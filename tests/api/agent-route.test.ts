@@ -9,7 +9,7 @@ const okDeps = () =>
   makeDeps({
     model: new FakeModel({
       request_understanding: { intent: "Explain ForgeMind", requestedActions: ["explain"] },
-      request_plan: { steps: ["Explain capabilities"] },
+      request_plan: { steps: ["Explain capabilities"], requiredTools: { github: false, jira: false, slack: false } },
       workflow_decision: { action: "finish", reason: "No tools needed." },
     }),
   });
@@ -27,7 +27,7 @@ describe("POST /api/agent validation", () => {
     const res = await handleAgentRequest(post(JSON.stringify({ message: "Explain what ForgeMind does." })), okDeps);
     expect(res.status).toBe(200);
     const json = await res.json();
-    expect(json.status).toBe("completed");
+    expect(json.status).toBe("success");
     expect(res.headers.get("x-forgemind-run-id")).toBe(json.runId);
   });
 

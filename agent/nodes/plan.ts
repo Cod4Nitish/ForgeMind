@@ -18,6 +18,11 @@ export function makePlanNode(deps: AgentDeps) {
         `Requested actions: ${state.understanding?.requestedActions.join(", ") || "none"}`,
       ].join("\n\n"),
       effort: "low",
+      // Jira tasks and Slack notifications are always based on GitHub issues.
+      check: (value) =>
+        (value.requiredTools.jira || value.requiredTools.slack) && !value.requiredTools.github
+          ? "jira/slack work requires GitHub issue data"
+          : null,
     });
 
     if (!outcome.ok) {
@@ -41,7 +46,9 @@ export function makePlanNode(deps: AgentDeps) {
           type: "analysis_completed",
           stage: "reasoning",
           status: "success",
-          summary: `Plan prepared with ${outcome.data.steps.length} step(s).`,
+          summary: `Plan prepared (${outcome.data.steps.length} step(s)); tools: ${
+            (["github", "jira", "slack"] as const).filter((t) => outcome.data.requiredTools[t]).join(", ") || "none"
+          }.`,
         }),
       ],
     };

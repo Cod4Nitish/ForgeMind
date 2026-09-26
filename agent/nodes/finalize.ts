@@ -1,34 +1,24 @@
 import type { AgentDeps } from "../deps";
 import { createEvent } from "../events";
 import type { ForgeMindStateUpdate, ForgeMindStateValue } from "../state";
+import { summarizeRun } from "../summary";
 
 /**
- * Builds the final response deterministically from state — the summary can
- * never claim more than the recorded results show.
+ * Builds the final result deterministically from recorded state — the summary
+ * can never claim more than the tool results show.
  */
 export function makeFinalizeNode(deps: AgentDeps) {
   return async function finalize(state: ForgeMindStateValue): Promise<ForgeMindStateUpdate> {
-    const firstError = state.errors[0];
-    let finalResponse: string;
-
-    if (firstError) {
-      finalResponse = `ForgeMind could not complete the request. ${firstError.message}`;
-    } else if (state.workflowDecision?.action === "continue" && state.githubRun?.status === "success") {
-      const count = state.githubRun.issueCount;
-      const { owner, name } = deps.config.github;
-      finalResponse = `ForgeMind retrieved ${count} open GitHub issue${count === 1 ? "" : "s"} from ${owner}/${name} through Swytchcode.`;
-    } else {
-      finalResponse = `ForgeMind analyzed the request and determined that no external engineering action is required. ${state.workflowDecision?.reason ?? ""}`.trim();
-    }
-
+    const result = summarizeRun(state, deps.config);
+    const label = { success: "Workflow completed.", partial: "Workflow completed with some external actions failed.", failed: "Workflow failed." };
     return {
-      finalResponse,
+      result,
       events: [
         createEvent(deps.now, {
           type: "finalized",
           stage: "final",
-          status: firstError ? "error" : "success",
-          summary: firstError ? "Workflow ended with an error." : "Workflow completed.",
+          status: result.status === "success" ? "success" : result.status === "partial" ? "warning" : "error",
+          summary: label[result.status],
         }),
       ],
     };

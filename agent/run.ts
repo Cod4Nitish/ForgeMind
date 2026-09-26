@@ -1,27 +1,16 @@
+import type { AgentApiResponse } from "@/lib/api/contract";
 import type { AgentDeps } from "./deps";
-import type { AgentError } from "./errors";
-import { createEvent, type AgentEvent } from "./events";
+import { createEvent } from "./events";
 import { buildForgeMindGraph } from "./graph";
-import type { Decision } from "./schemas";
+import { toApiResponse } from "./response";
 
-/** The sanitized result of one agent run — safe to return to the browser. */
-export type AgentRunResult = {
-  runId: string;
-  status: "completed" | "failed";
-  intent?: string;
-  plan: string[];
-  decision?: Decision;
-  github?: { status: "success" | "failed"; issueCount: number };
-  summary: string;
-  events: AgentEvent[];
-  errors: AgentError[];
-};
-
+/** Runs one ForgeMind workflow and returns the sanitized, browser-safe result. */
 export async function runForgeMind(
   userRequest: string,
   deps: AgentDeps,
   runId: string,
-): Promise<AgentRunResult> {
+): Promise<AgentApiResponse> {
+  const startedAt = deps.now();
   const graph = buildForgeMindGraph(deps);
   const state = await graph.invoke({
     runId,
@@ -36,16 +25,5 @@ export async function runForgeMind(
     ],
     errors: [],
   });
-
-  return {
-    runId,
-    status: state.errors.length > 0 ? "failed" : "completed",
-    intent: state.understanding?.intent,
-    plan: state.requestPlan?.steps ?? [],
-    decision: state.workflowDecision,
-    github: state.githubRun ? { status: state.githubRun.status, issueCount: state.githubRun.issueCount } : undefined,
-    summary: state.finalResponse ?? "",
-    events: state.events,
-    errors: state.errors,
-  };
+  return toApiResponse(state, deps.config, runId, { startedAt, finishedAt: deps.now() });
 }

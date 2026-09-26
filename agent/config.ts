@@ -20,6 +20,10 @@ export type GitHubRepository = { owner: string; name: string };
  */
 export type IntegrationConfig = {
   github: GitHubRepository;
+  /** Jira project key tasks are created in. Optional: without it Jira actions fail safely. */
+  jira?: { projectKey: string };
+  /** Slack channel (ID or #name) notifications go to. Optional: without it Slack fails safely. */
+  slack?: { channel: string };
 };
 
 type Env = Record<string, string | undefined>;
@@ -44,6 +48,9 @@ export function loadModelConfig(env: Env = process.env): ModelConfig {
 // GitHub owner: 1-39 alphanumerics/hyphens; repo: 1-100 of [A-Za-z0-9._-].
 const REPOSITORY_PATTERN = /^([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))\/([A-Za-z0-9._-]{1,100})$/;
 
+const JIRA_PROJECT_PATTERN = /^[A-Z][A-Z0-9_]{1,9}$/;
+const SLACK_CHANNEL_PATTERN = /^(?:[CG][A-Z0-9]{8,12}|#[a-z0-9][a-z0-9._-]{0,79})$/;
+
 export function parseRepository(value: string): GitHubRepository | undefined {
   const match = REPOSITORY_PATTERN.exec(value);
   if (!match || match[2] === "." || match[2] === "..") return undefined;
@@ -59,5 +66,25 @@ export function loadIntegrationConfig(env: Env = process.env): IntegrationConfig
   if (!github) {
     throw new ConfigError("FORGEMIND_GITHUB_REPOSITORY must be in owner/repo form.");
   }
-  return { github };
+
+  const config: IntegrationConfig = { github };
+
+  const projectKey = read(env, "FORGEMIND_JIRA_PROJECT");
+  if (projectKey) {
+    if (!JIRA_PROJECT_PATTERN.test(projectKey)) {
+      throw new ConfigError("FORGEMIND_JIRA_PROJECT must be a Jira project key such as FORGE.");
+    }
+    config.jira = { projectKey };
+  }
+
+  const channel = read(env, "FORGEMIND_SLACK_CHANNEL");
+  if (channel) {
+    if (!SLACK_CHANNEL_PATTERN.test(channel)) {
+      throw new ConfigError("FORGEMIND_SLACK_CHANNEL must be a channel ID (C0123…) or #channel-name.");
+    }
+    config.slack = { channel };
+  }
+
+  return config;
 }
+

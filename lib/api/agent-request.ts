@@ -1,7 +1,8 @@
 import { z } from "zod";
+import { MAX_MESSAGE_LENGTH } from "./contract";
 
+export { MAX_MESSAGE_LENGTH };
 export const MAX_REQUEST_BYTES = 16 * 1024;
-export const MAX_MESSAGE_LENGTH = 4000;
 
 const MessageText = z
   .string({ error: "message must be a string." })
