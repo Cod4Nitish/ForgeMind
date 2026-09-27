@@ -261,3 +261,40 @@ export function FlagIcon(props: IconProps) {
     </Svg>
   );
 }
+
+/** ↷ — skipped / not required. */
+export function SkipIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4 15a8 8 0 0 1 14.5-4.7" />
+      <path d="M19 5v5.5h-5.5" />
+      <circle cx="12" cy="17.5" r="1.25" fill="currentColor" stroke="none" />
+    </Svg>
+  );
+}
+
+export function ShieldCheckIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M12 3l7 3v5.5c0 4.3-2.9 8-7 9.5-4.1-1.5-7-5.2-7-9.5V6z" />
+      <path d="M9 12l2.2 2.2L15.5 10" />
+    </Svg>
+  );
+}
+
+export function ChevronDownIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M6 9l6 6 6-6" />
+    </Svg>
+  );
+}
+
+export function PencilIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z" />
+      <path d="M13.5 6.5l4 4" />
+    </Svg>
+  );
+}

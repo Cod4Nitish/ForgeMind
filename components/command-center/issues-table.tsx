@@ -95,7 +95,7 @@ export function IssuesTable({ view }: IssuesTableProps) {
   return (
     <Panel
       headingId="issues-heading"
-      title="GitHub issues"
+      title="Decisions & actions"
       aside={
         <p className="flex flex-wrap items-center gap-x-2 text-caption text-foreground-muted">
           {view.repository && <span className="font-mono text-mono break-all text-foreground-secondary">{view.repository}</span>}

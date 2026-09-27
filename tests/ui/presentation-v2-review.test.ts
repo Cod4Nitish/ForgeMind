@@ -323,7 +323,7 @@ describe("buildWorkflow — review cases", () => {
     const error = describeApiError(200, null);
     expect(error.kind).toBe("unreadable");
     const nodes = buildWorkflow({ phase: "error", error });
-    expect(nodes[0]).toMatchObject({ key: "request", status: "done", statusLabel: "Done", tone: "success" });
+    expect(nodes[0]).toMatchObject({ key: "request", status: "done", statusLabel: "Complete", tone: "success" });
     expect(nodes.slice(1, 7).every((n) => n.status === "unknown" && n.statusLabel === "Not reported")).toBe(true);
     expect(nodes[7]).toMatchObject({ key: "result", status: "unknown", statusLabel: "Unreadable", tone: "warning" });
     expect(nodes.some((n) => n.active || n.durationMs !== undefined)).toBe(false);

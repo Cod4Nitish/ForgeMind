@@ -1,13 +1,14 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { SYSTEM_HEALTH, interpretHealth, type DisplayTone, type SystemHealth } from "@/lib/presentation";
 import { Chip, StatusBadge } from "@/components/ui/badge";
+import { INTEGRATION_NAME, IntegrationMark } from "@/components/ui/brand-icons";
 
 /*
  * No "use client" directive: only imported by the interactive CommandCenter,
  * so it already lives in the client graph.
  */
 
-const INTEGRATIONS = ["GitHub", "Jira", "Slack"] as const;
+const INTEGRATIONS = ["github", "jira", "slack"] as const;
 
 type RunMode = "live" | "demo";
 
@@ -93,9 +94,12 @@ export function AppHeader({ brand, runStatus }: AppHeaderProps) {
               Integrations
             </span>
             <ul className="flex items-center gap-1">
-              {INTEGRATIONS.map((name) => (
-                <li key={name}>
-                  <Chip>{name}</Chip>
+              {INTEGRATIONS.map((key) => (
+                <li key={key}>
+                  <Chip>
+                    <IntegrationMark integration={key} className="size-3.5" />
+                    {INTEGRATION_NAME[key]}
+                  </Chip>
                 </li>
               ))}
             </ul>
@@ -112,7 +116,12 @@ export function AppHeader({ brand, runStatus }: AppHeaderProps) {
               }
             >
               <span className="text-label text-foreground-muted uppercase">Mode</span>
-              <StatusBadge tone={system.mode === "demo" ? "warning" : "success"} label={system.mode === "demo" ? "Demo sandbox" : "Live"} shape="chip" />
+              <StatusBadge
+                tone={system.mode === "demo" ? "info" : "success"}
+                glyph={system.mode === "demo" ? "info" : "dot"}
+                label={system.mode === "demo" ? "Demo" : "Live"}
+                shape="chip"
+              />
             </p>
           )}
         </div>

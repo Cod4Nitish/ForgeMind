@@ -124,3 +124,22 @@ export type AgentApiError = {
 export type AgentApiRequest = { message: string };
 
 export const MAX_MESSAGE_LENGTH = 4000;
+
+/*
+ * Opt-in progress stream. A client that sends `Accept: application/x-ndjson`
+ * receives one JSON message per line while the workflow runs, ending in
+ * either `result` (the exact AgentApiResponse above) or `error`. Requests
+ * without that Accept header get the single JSON response, unchanged.
+ * Request validation / configuration failures are still plain JSON errors.
+ */
+export const AGENT_STREAM_CONTENT_TYPE = "application/x-ndjson";
+
+export type AgentStreamMessage =
+  /** The workflow started. */
+  | { type: "run_started"; runId: string }
+  /** The agent began work on a stage (it may span several graph nodes). */
+  | { type: "stage_started"; stage: EventStage }
+  /** A real execution event, in order — the same events the result carries. */
+  | { type: "event"; event: ApiEvent }
+  | { type: "result"; result: AgentApiResponse }
+  | { type: "error"; error: { code: "internal_error"; message: string }; runId: string };

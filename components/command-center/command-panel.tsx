@@ -1,9 +1,10 @@
 import { useId, type FormEvent, type KeyboardEvent, type Ref } from "react";
-import { DEFAULT_PROMPT, promptCounter, type PromptValidation } from "@/lib/presentation";
+import { EXAMPLE_PROMPTS, promptCounter, type ExamplePrompt, type PromptValidation } from "@/lib/presentation";
 import { StatusIcon } from "@/components/ui/badge";
+import { INTEGRATION_NAME, IntegrationMark } from "@/components/ui/brand-icons";
 import { Button } from "@/components/ui/button";
-import { PlayIcon } from "@/components/ui/icons";
-import { panelSurface, toneIcon, toneText } from "@/components/ui/tone";
+import { PencilIcon, PlayIcon } from "@/components/ui/icons";
+import { toneIcon, toneText } from "@/components/ui/tone";
 
 /*
  * No "use client" directive: this module is only imported by the interactive
@@ -15,7 +16,10 @@ type CommandPanelProps = {
   value: string;
   onChange: (value: string) => void;
   onSubmit: () => void;
-  onUseDemo: () => void;
+  /** Fill the request with an example. */
+  onPickExample: (prompt: string) => void;
+  /** Clear the request so the user can write their own. */
+  onWriteOwn: () => void;
   validation: PromptValidation;
   /** Show validation feedback only once the user has edited the request. */
   showValidation: boolean;
@@ -33,7 +37,8 @@ export function CommandPanel({
   value,
   onChange,
   onSubmit,
-  onUseDemo,
+  onPickExample,
+  onWriteOwn,
   validation,
   showValidation,
   running,
@@ -63,15 +68,19 @@ export function CommandPanel({
   }
 
   return (
-    <section aria-labelledby={headingId} className={`${panelSurface} p-4 sm:p-5`}>
+    <section
+      aria-labelledby={headingId}
+      className="rounded-xl border border-border bg-surface p-4 shadow-raised sm:p-6"
+      style={{ backgroundImage: "var(--hero-wash)" }}
+    >
       <form onSubmit={handleSubmit} noValidate>
         {/* The h2 doubles as the textarea's visible label. */}
-        <h2 id={headingId} className="text-h2 text-foreground">
+        <h2 id={headingId} className="text-display text-foreground">
           <label htmlFor={textareaId}>What should ForgeMind handle?</label>
         </h2>
-        <p id={hintId} className="mt-1 text-body-sm text-foreground-secondary">
-          Describe the work in plain language. ForgeMind plans it and runs only the GitHub, Jira and Slack actions it
-          needs.
+        <p id={hintId} className="mt-2 max-w-3xl text-body text-foreground-secondary">
+          Describe the engineering work in plain language. ForgeMind plans the work and runs only the GitHub, Jira and
+          Slack actions it needs.
         </p>
 
         <textarea
@@ -86,7 +95,7 @@ export function CommandPanel({
           aria-invalid={invalid || undefined}
           aria-describedby={[hintId, invalid ? errorId : null, counterId, shortcutId].filter(Boolean).join(" ")}
           placeholder="Describe an engineering task…"
-          className="mt-3 block max-h-72 min-h-16 w-full resize-y rounded-md border border-border-strong bg-surface-elevated px-3 py-2 text-body text-foreground transition-colors field-sizing-content placeholder:text-foreground-muted hover:bg-surface-hover read-only:cursor-default read-only:text-foreground-secondary read-only:hover:bg-surface-elevated aria-invalid:border-danger"
+          className="mt-4 block max-h-72 min-h-24 w-full resize-y rounded-lg border border-border-strong bg-surface-elevated px-4 py-3 text-body text-foreground shadow-panel transition-colors field-sizing-content placeholder:text-foreground-muted hover:bg-surface-hover focus-visible:border-primary read-only:cursor-default read-only:text-foreground-secondary read-only:hover:bg-surface-elevated aria-invalid:border-danger"
         />
 
         <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -129,11 +138,6 @@ export function CommandPanel({
           </div>
 
           <div className="flex shrink-0 items-center justify-end gap-2">
-            {value !== DEFAULT_PROMPT && !running && (
-              <Button variant="ghost" size="sm" onClick={onUseDemo}>
-                Use demo request
-              </Button>
-            )}
             <Button
               type="submit"
               variant="primary"
@@ -148,6 +152,97 @@ export function CommandPanel({
           </div>
         </div>
       </form>
+
+      <Examples value={value} running={running} onPick={onPickExample} onWriteOwn={onWriteOwn} />
     </section>
+  );
+}
+
+const card =
+  "group flex h-full w-full flex-col gap-2 rounded-lg border p-3 text-left transition-colors duration-fast disabled:cursor-not-allowed disabled:opacity-60";
+
+function ExampleCard({
+  example,
+  selected,
+  disabled,
+  onPick,
+}: {
+  example: ExamplePrompt;
+  selected: boolean;
+  disabled: boolean;
+  onPick: (prompt: string) => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      disabled={disabled}
+      onClick={() => onPick(example.prompt)}
+      className={`${card} ${
+        selected
+          ? "border-primary bg-primary-subtle"
+          : "border-border bg-surface-elevated hover:border-border-strong hover:bg-surface-hover"
+      }`}
+    >
+      <span className="flex items-start justify-between gap-2">
+        <span className="text-h3 text-foreground">{example.title}</span>
+        <span className="flex shrink-0 items-center gap-1.5 pt-0.5">
+          {example.tools.map((tool) => (
+            <IntegrationMark key={tool} integration={tool} className="size-3.5" />
+          ))}
+          <span className="sr-only">Uses {example.tools.map((tool) => INTEGRATION_NAME[tool]).join(", ")}</span>
+        </span>
+      </span>
+      <span className="line-clamp-2 text-caption text-foreground-muted">{example.prompt}</span>
+    </button>
+  );
+}
+
+function Examples({
+  value,
+  running,
+  onPick,
+  onWriteOwn,
+}: {
+  value: string;
+  running: boolean;
+  onPick: (prompt: string) => void;
+  onWriteOwn: () => void;
+}) {
+  const id = useId();
+  return (
+    <div className="mt-6 border-t border-border pt-5">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <h3 id={id} className="text-label text-foreground-muted uppercase">
+          Try an example
+        </h3>
+        <p className="text-caption text-foreground-muted">
+          Have a different engineering problem? Write your own request and run it.
+        </p>
+      </div>
+      <ul aria-labelledby={id} className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {EXAMPLE_PROMPTS.map((example) => (
+          <li key={example.id}>
+            <ExampleCard example={example} selected={value === example.prompt} disabled={running} onPick={onPick} />
+          </li>
+        ))}
+        <li>
+          <button
+            type="button"
+            disabled={running}
+            onClick={onWriteOwn}
+            className={`${card} border-dashed border-border-strong bg-transparent hover:bg-surface-hover`}
+          >
+            <span className="flex items-center gap-2 text-h3 text-foreground">
+              <PencilIcon className="size-4 text-primary" />
+              Write your own
+            </span>
+            <span className="text-caption text-foreground-muted">
+              Have a different engineering problem? Describe it yourself.
+            </span>
+          </button>
+        </li>
+      </ul>
+    </div>
   );
 }

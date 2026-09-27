@@ -3,6 +3,7 @@ import { ConfigError } from "@/agent/errors";
 import { runForgeMind } from "@/agent/run";
 import { logger } from "@/lib/logger";
 import { AgentRequestSchema, MAX_REQUEST_BYTES } from "./agent-request";
+import { AGENT_STREAM_CONTENT_TYPE, type AgentStreamMessage } from "./contract";
 
 export type ApiErrorCode =
   | "invalid_json"
@@ -66,6 +67,10 @@ export async function handleAgentRequest(
     return errorResponse(500, "internal_error", "ForgeMind could not start the workflow.", runId);
   }
 
+  if ((request.headers.get("accept") ?? "").toLowerCase().includes(AGENT_STREAM_CONTENT_TYPE)) {
+    return streamRun(parsed.data.message, deps, runId, startedAt);
+  }
+
   try {
     logger.info("agent.run_started", { runId });
     const result = await runForgeMind(parsed.data.message, deps, runId);
@@ -83,4 +88,51 @@ export async function handleAgentRequest(
     });
     return errorResponse(500, "internal_error", "Agent workflow failed.", runId);
   }
+}
+
+/**
+ * Opt-in NDJSON progress stream: the same run, reported as it happens. Every
+ * line is a public-safe `AgentStreamMessage`; the last one is the complete
+ * result or a safe error.
+ */
+function streamRun(message: string, deps: AgentDeps, runId: string, startedAt: number): Response {
+  const encoder = new TextEncoder();
+  const body = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      let open = true;
+      const send = (line: AgentStreamMessage) => {
+        if (!open) return;
+        try {
+          controller.enqueue(encoder.encode(`${JSON.stringify(line)}
+`));
+        } catch {
+          open = false; // the client went away; the run still finishes and is logged
+        }
+      };
+
+      send({ type: "run_started", runId });
+      try {
+        logger.info("agent.run_started", { runId, streamed: true });
+        const result = await runForgeMind(message, deps, runId, (progress) => send(progress));
+        logger.info("agent.run_finished", { runId, status: result.status, durationMs: Date.now() - startedAt });
+        send({ type: "result", result });
+      } catch (error) {
+        logger.error("agent.run_crashed", {
+          runId,
+          errorName: error instanceof Error ? error.name : "unknown",
+          durationMs: Date.now() - startedAt,
+        });
+        send({ type: "error", error: { code: "internal_error", message: "Agent workflow failed." }, runId });
+      }
+      if (open) controller.close();
+    },
+  });
+
+  return new Response(body, {
+    headers: {
+      "content-type": `${AGENT_STREAM_CONTENT_TYPE}; charset=utf-8`,
+      "cache-control": "no-store",
+      "x-forgemind-run-id": runId,
+    },
+  });
 }

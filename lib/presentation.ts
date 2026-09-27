@@ -13,6 +13,7 @@ import {
   MAX_MESSAGE_LENGTH,
   type AgentApiErrorCode,
   type AgentApiResponse,
+  type AgentStreamMessage,
   type ApiEvent,
   type ApiIssue,
   type ApiJiraTask,
@@ -69,6 +70,8 @@ export type PipelineStageView = {
 
 export type TimelineEventView = {
   id: string;
+  /** Event type as reported (e.g. "tool_completed"). */
+  type: string;
   stage: EventStage;
   stageLabel: string;
   statusLabel: string;
@@ -437,6 +440,7 @@ function toTimeline(events: ApiEvent[], startedAt: string): TimelineEventView[] 
     const offset = typeof event.timestamp === "string" ? offsetLabel(startedAt, event.timestamp) : undefined;
     return {
       id: `${index}-${event.stage}-${event.status}`,
+      type: typeof event.type === "string" ? event.type : "",
       stage: event.stage,
       stageLabel: STAGE_LABELS[event.stage],
       statusLabel: status.label,
@@ -792,7 +796,7 @@ export type DisplayTone = Tone | "running";
 /** Snapshot of the Command Center's request lifecycle, as the UI holds it. */
 export type RunSnapshot =
   | { phase: "idle" }
-  | { phase: "running" }
+  | { phase: "running"; progress?: LiveProgress }
   | { phase: "done"; view: CommandCenterViewModel }
   | { phase: "error"; error: ApiErrorView };
 
@@ -1068,8 +1072,14 @@ export type WorkflowNodeView = {
   status: WorkflowNodeStatus;
   statusLabel: string;
   tone: DisplayTone;
-  /** The single node in flight: only the Request node, only while the request is pending. */
+  /** The single node in flight (from the real progress stream, or Request while the request is pending). */
   active: boolean;
+  /**
+   * One real line about this node: while running, what the stage is doing;
+   * afterwards, its own event summary (e.g. "5 open GitHub issues retrieved.")
+   * or why it did not run.
+   */
+  detail?: string;
   /** Elapsed time from real timestamps — only for nodes that actually ran. */
   durationMs?: number;
   durationLabel?: string;
@@ -1096,7 +1106,7 @@ const WORKFLOW: readonly WorkflowDef[] = [
 const NODE_STATUS: Record<WorkflowNodeStatus, { label: string; tone: DisplayTone }> = {
   waiting: { label: "Waiting", tone: "pending" },
   running: { label: "Running", tone: "running" },
-  done: { label: "Done", tone: "success" },
+  done: { label: "Complete", tone: "success" },
   partial: { label: "Partial", tone: "warning" },
   failed: { label: "Failed", tone: "danger" },
   skipped: { label: "Skipped", tone: "neutral" },
@@ -1150,7 +1160,13 @@ function stageElapsedMs(
 function workflowNode(
   def: WorkflowDef,
   status: WorkflowNodeStatus,
-  override: { statusLabel?: string; tone?: DisplayTone; durationMs?: number; durationScope?: "run" } = {},
+  override: {
+    statusLabel?: string;
+    tone?: DisplayTone;
+    durationMs?: number;
+    durationScope?: "run";
+    detail?: string;
+  } = {},
 ): WorkflowNodeView {
   const base = NODE_STATUS[status];
   const durationMs = RAN.includes(status) ? override.durationMs : undefined;
@@ -1162,6 +1178,7 @@ function workflowNode(
     statusLabel: override.statusLabel ?? base.label,
     tone: override.tone ?? base.tone,
     active: status === "running",
+    ...(override.detail ? { detail: override.detail } : {}),
     ...(durationMs !== undefined
       ? {
           durationMs,
@@ -1192,6 +1209,7 @@ export function buildWorkflow(run: RunSnapshot): WorkflowNodeView[] {
       return WORKFLOW.map((def) => workflowNode(def, "waiting"));
 
     case "running":
+      if (run.progress?.started) return liveWorkflow(run.progress);
       return WORKFLOW.map((def) => workflowNode(def, def.key === "request" ? "running" : "waiting"));
 
     case "error": {
@@ -1221,6 +1239,7 @@ export function buildWorkflow(run: RunSnapshot): WorkflowNodeView[] {
           const failed = timeline.some((event) => event.stage === "request" && event.tone === "danger");
           return workflowNode(def, failed ? "failed" : "done", {
             durationMs: stageElapsedMs(timeline, "request", startedAt),
+            detail: "Request accepted",
           });
         }
         if (def.key === "result") {
@@ -1230,13 +1249,241 @@ export function buildWorkflow(run: RunSnapshot): WorkflowNodeView[] {
             statusLabel: RUN_STATUS[view.status].label,
             durationMs: elapsedMs(startedAt, view.finishedAt),
             durationScope: "run",
+            detail: view.stateText,
           });
         }
         const pipelineKey = PIPELINE_BY_NODE[def.key];
         const stage = view.stages.find((candidate) => candidate.key === pipelineKey);
         const status = stage ? NODE_FROM_STAGE[stage.status] : "not_run";
-        return workflowNode(def, status, { durationMs: stageElapsedMs(timeline, def.stage, startedAt) });
+        return workflowNode(def, status, {
+          durationMs: stageElapsedMs(timeline, def.stage, startedAt),
+          detail: finishedDetail(timeline, def.stage, status, view.status),
+        });
       });
     }
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Live progress (opt-in NDJSON stream from POST /api/agent)          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * What the progress stream has reported so far. Only real messages: the
+ * stages the agent actually started, in order, and the events it emitted.
+ * `started` is set once the server confirms the run began.
+ */
+export type LiveProgress = {
+  started: boolean;
+  stages: EventStage[];
+  events: ApiEvent[];
+};
+
+export const EMPTY_PROGRESS: LiveProgress = { started: false, stages: [], events: [] };
+
+/** What each stage does, shown only while that stage is actually running. */
+const RUNNING_DETAIL: Partial<Record<EventStage, string>> = {
+  reasoning: "Understanding and planning the request",
+  github: "Retrieving open issues",
+  analysis: "Assessing severity and impact",
+  jira: "Creating Jira tasks",
+  verification: "Confirming the tasks exist",
+  slack: "Preparing the team notification",
+  final: "Compiling the report",
+};
+
+export const NOT_REQUIRED_TEXT = "Not required for this request";
+
+/** Event types that report a stage's outcome, rather than a selection or decision. */
+const OUTCOME_TYPES = new Set(["tool_completed", "tool_failed", "analysis_completed", "step_skipped"]);
+
+/** A stage's most telling event summary: its last outcome event, else its last event. */
+function stageSummary(events: readonly ApiEvent[], stage: EventStage): string | undefined {
+  const own = events.filter((event) => event.stage === stage);
+  const outcome = own.findLast((event) => OUTCOME_TYPES.has(event.type)) ?? own.at(-1);
+  return outcome ? optionalText(outcome.summary) : undefined;
+}
+
+/** The detail line of a finished node: its own outcome event, or why it did not run. */
+function finishedDetail(
+  timeline: readonly TimelineEventView[],
+  stage: EventStage,
+  status: WorkflowNodeStatus,
+  runStatus: RunStatus,
+): string | undefined {
+  if (status === "not_run") {
+    return runStatus === "failed" ? "Not run: an earlier step stopped the workflow" : NOT_REQUIRED_TEXT;
+  }
+  const own = timeline.filter((event) => event.stage === stage);
+  if (status === "skipped") return own.at(-1)?.summary || NOT_REQUIRED_TEXT;
+  const outcome =
+    own.findLast((event) => event.tone === "danger" || event.tone === "warning") ??
+    own.findLast((event) => OUTCOME_TYPES.has(event.type)) ??
+    own.at(-1);
+  return outcome?.summary || undefined;
+}
+
+/** Outcome of a stage from the events it has emitted so far. */
+function liveStageStatus(events: readonly ApiEvent[], stage: EventStage): WorkflowNodeStatus | undefined {
+  const own = events.filter((event) => event.stage === stage);
+  if (own.length === 0) return undefined;
+  if (own.some((event) => event.status === "error")) return "failed";
+  if (own.some((event) => event.status === "warning")) return "partial";
+  if (own.every((event) => event.status === "skipped")) return "skipped";
+  return "done";
+}
+
+/**
+ * Workflow nodes while a run streams. A node is Running only while its stage
+ * is the latest one the agent started; earlier stages show the outcome of
+ * their own events; stages not reached yet stay Waiting. Nothing is inferred
+ * from time, and no stage is marked complete before its events arrive.
+ */
+function liveWorkflow(progress: LiveProgress): WorkflowNodeView[] {
+  const current = progress.stages.at(-1);
+  return WORKFLOW.map((def) => {
+    if (def.key === "request") return workflowNode(def, "done", { detail: "Request accepted" });
+    if (def.stage === current) return workflowNode(def, "running", { detail: RUNNING_DETAIL[def.stage] });
+    const status = liveStageStatus(progress.events, def.stage);
+    if (status) return workflowNode(def, status, { detail: stageSummary(progress.events, def.stage) });
+    return workflowNode(def, "waiting");
+  });
+}
+
+/** Applies one stream message to the progress. Malformed messages are ignored. */
+export function applyStreamMessage(progress: LiveProgress, message: AgentStreamMessage): LiveProgress {
+  switch (message.type) {
+    case "run_started":
+      return { ...progress, started: true };
+    case "stage_started":
+      return progress.stages.at(-1) === message.stage
+        ? progress
+        : { ...progress, started: true, stages: [...progress.stages, message.stage] };
+    case "event":
+      return { ...progress, started: true, events: [...progress.events, message.event] };
+    default:
+      return progress;
+  }
+}
+
+function isApiEvent(value: unknown): value is ApiEvent {
+  return (
+    isRecord(value) &&
+    hasKey(STAGE_LABELS, value.stage) &&
+    hasKey(EVENT_STATUS, value.status) &&
+    typeof value.summary === "string" &&
+    typeof value.type === "string"
+  );
+}
+
+/** Parses one NDJSON line from the progress stream; anything unexpected → null. */
+export function parseStreamLine(line: string): AgentStreamMessage | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  if (!isRecord(value)) return null;
+  switch (value.type) {
+    case "run_started":
+      return typeof value.runId === "string" ? { type: "run_started", runId: value.runId } : null;
+    case "stage_started":
+      return hasKey(STAGE_LABELS, value.stage) ? { type: "stage_started", stage: value.stage } : null;
+    case "event":
+      return isApiEvent(value.event) ? { type: "event", event: value.event } : null;
+    case "result": {
+      const result = parseAgentResponse(value.result);
+      return result ? { type: "result", result } : null;
+    }
+    case "error":
+      return {
+        type: "error",
+        error: { code: "internal_error", message: "Agent workflow failed." },
+        runId: typeof value.runId === "string" ? value.runId : "",
+      };
+    default:
+      return null;
+  }
+}
+
+/** The latest real event summary, for the running banner. */
+export function latestActivity(progress: LiveProgress | undefined): string | undefined {
+  const last = progress?.events.at(-1);
+  return last ? optionalText(last.summary) : undefined;
+}
+
+/* ------------------------------------------------------------------ */
+/* Example requests                                                   */
+/* ------------------------------------------------------------------ */
+
+export type IntegrationKey = "github" | "jira" | "slack";
+
+export type ExamplePrompt = {
+  id: string;
+  title: string;
+  prompt: string;
+  /** Integrations the request mentions (display only; the agent decides what runs). */
+  tools: IntegrationKey[];
+};
+
+export const EXAMPLE_PROMPTS: readonly ExamplePrompt[] = [
+  { id: "triage", title: "Full engineering triage", prompt: DEFAULT_PROMPT, tools: ["github", "jira", "slack"] },
+  {
+    id: "jira",
+    title: "Create Jira work for actionable issues",
+    prompt: "Review open GitHub issues and create Jira tasks only for the bugs that require engineering action.",
+    tools: ["github", "jira"],
+  },
+  {
+    id: "slack",
+    title: "Notify Slack about urgent issues",
+    prompt:
+      "Scan the latest GitHub issues for critical problems and notify the engineering team on Slack when action is required.",
+    tools: ["github", "slack"],
+  },
+  {
+    id: "impact",
+    title: "Find high-impact bugs",
+    prompt: "Find high-impact open bugs in GitHub and create Jira tasks for the ones that need engineering work.",
+    tools: ["github", "jira"],
+  },
+  {
+    id: "noise",
+    title: "Filter low-priority noise",
+    prompt:
+      "Review the open GitHub issues, ignore low-priority noise, and turn actionable bugs into verified engineering work.",
+    tools: ["github", "jira"],
+  },
+];
+
+/* ------------------------------------------------------------------ */
+/* Result summary lines                                               */
+/* ------------------------------------------------------------------ */
+
+/** Plain-language outcome lines, only from the run's own counters and stage outcomes. */
+export function outcomeLines(view: CommandCenterViewModel): { text: string; tone: Tone }[] {
+  const stage = (key: PipelineStageKey) => view.stages.find((candidate) => candidate.key === key)?.status;
+  const lines: { text: string; tone: Tone }[] = [];
+  const github = stage("github");
+  if (github === "success" || github === "partial") {
+    const reviewed = view.metrics.issuesReviewed;
+    lines.push({ text: `Reviewed ${reviewed} open ${reviewed === 1 ? "issue" : "issues"}`, tone: "success" });
+    const actionable = view.metrics.actionableIssues;
+    lines.push(
+      actionable === 0
+        ? { text: "Nothing required engineering action", tone: "neutral" }
+        : { text: `${actionable} required engineering action`, tone: "success" },
+    );
+  } else if (github === "failed") {
+    lines.push({ text: "GitHub issues could not be retrieved", tone: "danger" });
+  }
+  const jira = jiraOutcomeCounts(view);
+  const tasks = (n: number) => `${n} Jira ${n === 1 ? "task" : "tasks"}`;
+  if (jira.created > 0) lines.push({ text: `${tasks(jira.created)} created`, tone: "success" });
+  if (jira.failed > 0) lines.push({ text: `${tasks(jira.failed)} failed`, tone: "danger" });
+  if (jira.unconfirmed > 0) lines.push({ text: `${tasks(jira.unconfirmed)} unconfirmed`, tone: "warning" });
+  if (view.slack.status === "sent") lines.push({ text: "Slack notification sent", tone: "success" });
+  if (view.slack.status === "failed") lines.push({ text: "Slack notification failed", tone: "danger" });
+  return lines;
 }

@@ -4,43 +4,34 @@ import { Chip, StatusIcon } from "@/components/ui/badge";
 import { DotIcon } from "@/components/ui/icons";
 import { eyebrow, panelSurface, toneChip, toneIcon, toneSurface } from "@/components/ui/tone";
 
-/** IDLE — quiet invitation; never visually dominant. */
-export function IdleState() {
-  return (
-    <section aria-labelledby="overview-heading" className="rounded-lg border border-dashed border-border p-4 sm:p-5">
-      <h2 id="overview-heading" className={eyebrow}>
-        Run overview
-      </h2>
-      <p className="mt-1 text-h3 text-foreground">{STATE_TEXT.idle}</p>
-      <p className="mt-1 text-body-sm text-foreground-secondary">
-        ForgeMind inspects GitHub issues, creates Jira tasks for actionable work and notifies your team in Slack —
-        describe a task above and select Execute.
-      </p>
-    </section>
-  );
-}
-
 /**
- * RUNNING — a single calm banner. The response is not streamed, so there is
- * no fake per-step progress, timer or invented event.
+ * RUNNING: a calm banner. The latest line is the agent's own most recent
+ * event summary from the progress stream, never an invented message.
  */
-export function RunningState({ retry }: { retry: boolean }) {
+export function RunningState({ retry, activity }: { retry: boolean; activity?: string }) {
   return (
     <section aria-labelledby="overview-heading" aria-busy="true" className={`${panelSurface} p-4 sm:p-5`}>
       <div className="flex gap-3">
         <span className="grid size-8 shrink-0 place-items-center rounded-md border border-primary bg-primary-subtle text-primary">
-          <DotIcon className="size-4" />
+          <DotIcon className="size-4 motion-safe:animate-pulse" />
         </span>
         <div className="min-w-0">
           <h2 id="overview-heading" className={eyebrow}>
-            Run overview
+            Run in progress
           </h2>
           <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
             <span className="text-h2 text-foreground">{STATE_TEXT.running}</span>
             {retry && <Chip>New execution</Chip>}
           </p>
-          <p className="mt-1 text-body-sm text-foreground-secondary">
-            The complete, real execution log appears when the run finishes.
+          <p className="mt-1 text-body-sm break-words text-foreground-secondary">
+            {activity ? (
+              <>
+                <span className="text-foreground-muted">Latest: </span>
+                {activity}
+              </>
+            ) : (
+              "Connecting to the agent…"
+            )}
           </p>
         </div>
       </div>

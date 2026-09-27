@@ -1,44 +1,50 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import type { AgentApiRequest } from "@/lib/api/contract";
+import { AGENT_STREAM_CONTENT_TYPE, type AgentApiRequest } from "@/lib/api/contract";
 import {
   DEFAULT_PROMPT,
+  EMPTY_PROGRESS,
   STATE_TEXT,
+  applyStreamMessage,
   buildWorkflow,
   describeApiError,
+  latestActivity,
   parseAgentResponse,
+  parseStreamLine,
   runStatusChip,
   toViewModel,
   validatePrompt,
   type ApiErrorView,
   type CommandCenterViewModel,
+  type LiveProgress,
+  type WorkflowNodeView,
 } from "@/lib/presentation";
 import { Button } from "@/components/ui/button";
 import { PlusIcon, RetryIcon } from "@/components/ui/icons";
+import { AdvancedDetails } from "./advanced-details";
 import { AppHeader } from "./app-header";
 import { CommandPanel } from "./command-panel";
-import { ExecutionLog } from "./execution-log";
 import { IssuesTable } from "./issues-table";
-import { JiraList } from "./jira-list";
-import { IdleState, RequestErrorState, RunningState } from "./run-states";
+import { RequestErrorState, RunningState } from "./run-states";
 import { RunOverview } from "./run-overview";
-import { SlackCard } from "./slack-card";
 import { WorkflowStrip } from "./workflow-strip";
 
 /** Structurally a `RunSnapshot` (lib/presentation) plus the prompt that produced it. */
 type RunState =
   | { phase: "idle" }
-  | { phase: "running"; prompt: string; retry: boolean }
+  | { phase: "running"; prompt: string; retry: boolean; progress: LiveProgress }
   | { phase: "done"; prompt: string; view: CommandCenterViewModel }
   | { phase: "error"; prompt: string; error: ApiErrorView };
 
-function announcementFor(run: RunState): string {
+function announcementFor(run: RunState, workflow: WorkflowNodeView[]): string {
   switch (run.phase) {
     case "idle":
       return STATE_TEXT.idle;
-    case "running":
-      return STATE_TEXT.running;
+    case "running": {
+      const active = workflow.find((node) => node.active && node.key !== "request");
+      return active ? `${STATE_TEXT.running} ${active.label}: running.` : STATE_TEXT.running;
+    }
     case "done":
       return run.view.stateText;
     case "error":
@@ -46,11 +52,51 @@ function announcementFor(run: RunState): string {
   }
 }
 
+type Outcome = { kind: "done"; view: CommandCenterViewModel } | { kind: "error"; error: ApiErrorView };
+
+/**
+ * Reads the NDJSON progress stream line by line, reporting each real
+ * message, until the final `result` or `error`. A stream that ends without
+ * either is reported as "Result unavailable" (the run may have happened).
+ */
+async function readProgressStream(
+  response: Response,
+  onProgress: (update: (progress: LiveProgress) => LiveProgress) => void,
+): Promise<Outcome> {
+  const runIdHeader = response.headers.get("x-forgemind-run-id");
+  const reader = response.body?.getReader();
+  if (!reader) return { kind: "error", error: describeApiError(response.status, null, runIdHeader) };
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+    const lines = buffer.split("\n");
+    buffer = done ? "" : (lines.pop() ?? "");
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const message = parseStreamLine(line);
+      if (!message) continue;
+      if (message.type === "result") return { kind: "done", view: toViewModel(message.result) };
+      if (message.type === "error") {
+        return {
+          kind: "error",
+          error: describeApiError(500, { error: message.error, runId: message.runId }, runIdHeader),
+        };
+      }
+      onProgress((progress) => applyStreamMessage(progress, message));
+    }
+    if (done) break;
+  }
+  return { kind: "error", error: describeApiError(response.status, null, runIdHeader) };
+}
+
 /**
  * The interactive Command Center. Owns the prompt, the single in-flight
  * request and the current run's presentation. Talks only to POST /api/agent
- * (plus GET /api/health for the System chip); all display values come from
- * the presentation layer.
+ * (plus GET /api/health for the header); it asks for the opt-in progress
+ * stream so the workflow advances as the agent actually reports each step.
  */
 export function CommandCenter({ brand }: { brand: ReactNode }) {
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
@@ -83,33 +129,47 @@ export function CommandCenter({ brand }: { brand: ReactNode }) {
     if (!signal || signal.aborted) return;
 
     inFlight.current = true;
-    setRun({ phase: "running", prompt: checked.message, retry });
+    const message = checked.message;
+    setRun({ phase: "running", prompt: message, retry, progress: EMPTY_PROGRESS });
+
+    const finish = (outcome: Outcome) =>
+      setRun(
+        outcome.kind === "done"
+          ? { phase: "done", prompt: message, view: outcome.view }
+          : { phase: "error", prompt: message, error: outcome.error },
+      );
 
     try {
-      const body: AgentApiRequest = { message: checked.message };
+      const body: AgentApiRequest = { message };
       const response = await fetch("/api/agent", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        headers: { "Content-Type": "application/json", Accept: `${AGENT_STREAM_CONTENT_TYPE}, application/json` },
         body: JSON.stringify(body),
         cache: "no-store",
         signal,
       });
+
+      if (response.ok && (response.headers.get("content-type") ?? "").includes(AGENT_STREAM_CONTENT_TYPE)) {
+        const outcome = await readProgressStream(response, (update) => {
+          if (signal.aborted) return;
+          setRun((current) => (current.phase === "running" ? { ...current, progress: update(current.progress) } : current));
+        });
+        if (!signal.aborted) finish(outcome);
+        return;
+      }
+
+      // Plain JSON: an error response, or a server without the stream.
       const payload: unknown = await response.json().catch(() => null);
       if (signal.aborted) return;
-
       const result = response.ok ? parseAgentResponse(payload) : null;
-      setRun(
+      finish(
         result
-          ? { phase: "done", prompt: checked.message, view: toViewModel(result) }
-          : {
-              phase: "error",
-              prompt: checked.message,
-              error: describeApiError(response.status, payload, response.headers.get("x-forgemind-run-id")),
-            },
+          ? { kind: "done", view: toViewModel(result) }
+          : { kind: "error", error: describeApiError(response.status, payload, response.headers.get("x-forgemind-run-id")) },
       );
     } catch {
       if (signal.aborted) return;
-      setRun({ phase: "error", prompt: checked.message, error: describeApiError(0, null) });
+      finish({ kind: "error", error: describeApiError(0, null) });
     } finally {
       inFlight.current = false;
     }
@@ -138,8 +198,14 @@ export function CommandCenter({ brand }: { brand: ReactNode }) {
     setEdited(true);
   }
 
-  function handleUseDemo() {
-    setPrompt(DEFAULT_PROMPT);
+  function handlePickExample(example: string) {
+    setPrompt(example);
+    textareaRef.current?.focus();
+  }
+
+  function handleWriteOwn() {
+    setPrompt("");
+    setEdited(false);
     textareaRef.current?.focus();
   }
 
@@ -161,44 +227,55 @@ export function CommandCenter({ brand }: { brand: ReactNode }) {
       </>
     ) : null;
 
+  const resultNode = workflow.at(-1);
+  const workflowAside =
+    run.phase === "running" ? (
+      <p className="inline-flex items-center gap-2 text-caption font-medium text-primary">
+        <span aria-hidden="true" className="size-2 rounded-full bg-primary motion-safe:animate-pulse" />
+        Live: each step updates as the agent reports it
+      </p>
+    ) : run.phase === "done" && resultNode?.durationLabel ? (
+      <p className="text-caption text-foreground-muted">
+        Finished in <span className="font-mono text-mono text-foreground-secondary">{resultNode.durationLabel}</span>
+      </p>
+    ) : run.phase === "idle" ? (
+      <p className="text-caption text-foreground-muted">Waiting for a request</p>
+    ) : null;
+
   return (
     <div className="flex flex-1 flex-col">
       <AppHeader brand={brand} runStatus={runStatusChip(run)} />
 
-      <main className="mx-auto w-full max-w-screen-2xl flex-1 space-y-4 px-4 py-6 sm:px-6 lg:px-8">
+      <main className="mx-auto w-full max-w-screen-2xl flex-1 space-y-5 px-4 py-6 sm:px-6 lg:px-8">
         <CommandPanel
           value={prompt}
           onChange={handleChange}
           onSubmit={handleSubmit}
-          onUseDemo={handleUseDemo}
+          onPickExample={handlePickExample}
+          onWriteOwn={handleWriteOwn}
           validation={validation}
           showValidation={edited}
           running={running}
           textareaRef={textareaRef}
         />
 
-        <WorkflowStrip nodes={workflow} busy={running} />
+        <WorkflowStrip nodes={workflow} busy={running} aside={workflowAside} />
 
-        {run.phase === "idle" && <IdleState />}
-        {run.phase === "running" && <RunningState retry={run.retry} />}
+        {run.phase === "running" && <RunningState retry={run.retry} activity={latestActivity(run.progress)} />}
         {run.phase === "error" && <RequestErrorState error={run.error} actions={runActions} />}
 
         {run.phase === "done" && (
           <>
             <RunOverview view={run.view} actions={runActions} />
-            <div className="grid items-start gap-4 lg:grid-cols-12">
-              <ExecutionLog view={run.view} className="lg:col-span-5" />
-              <div className="space-y-4 motion-safe:animate-reveal lg:col-span-7">
-                <IssuesTable view={run.view} />
-                <JiraList view={run.view} />
-                <SlackCard view={run.view} />
-              </div>
+            <div className="motion-safe:animate-reveal">
+              <IssuesTable view={run.view} />
             </div>
+            <AdvancedDetails view={run.view} />
           </>
         )}
 
         <p role="status" aria-live="polite" aria-atomic="true" className="sr-only">
-          {announcementFor(run)}
+          {announcementFor(run, workflow)}
         </p>
       </main>
     </div>

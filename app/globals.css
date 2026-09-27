@@ -56,6 +56,37 @@
   --info-background: oklch(0.24 0.035 250);
   --info-border: oklch(0.45 0.08 250);
 
+  /*
+   * Stage identity accents (workflow nodes, example cards). Used for icon
+   * strokes, tile tints and borders only, never for body text. Every accent
+   * is >= 3:1 against its own tint and every surface (non-text contrast).
+   */
+  --stage-request: oklch(0.86 0.02 255);
+  --stage-request-bg: oklch(0.27 0.014 255);
+  --stage-reason: oklch(0.78 0.1 262);
+  --stage-reason-bg: oklch(0.25 0.045 262);
+  --stage-github: oklch(0.93 0.006 255);
+  --stage-github-bg: oklch(0.28 0.01 255);
+  --stage-analyze: oklch(0.82 0.11 205);
+  --stage-analyze-bg: oklch(0.25 0.04 205);
+  --stage-jira: oklch(0.8 0.13 58);
+  --stage-jira-bg: oklch(0.26 0.045 58);
+  --stage-verify: oklch(0.8 0.15 152);
+  --stage-verify-bg: oklch(0.25 0.04 152);
+  --stage-slack: oklch(0.78 0.12 330);
+  --stage-slack-bg: oklch(0.25 0.045 330);
+
+  /* Slack mark (four brand colors), used only inside the Slack icon. */
+  --slack-blue: #36c5f0;
+  --slack-green: #2eb67d;
+  --slack-yellow: #ecb22e;
+  --slack-red: #e01e5a;
+
+  /* Soft cyan/violet wash behind the request hero. */
+  --hero-wash:
+    radial-gradient(120% 140% at 0% 0%, oklch(0.8 0.125 222 / 0.1), transparent 55%),
+    radial-gradient(90% 120% at 100% 0%, oklch(0.7 0.14 290 / 0.08), transparent 60%);
+
   /* Motion (spec §1/§8) */
   --duration-fast: 140ms; /* hover / press / focus colors */
   --duration-base: 200ms; /* component transitions, result reveal */
@@ -113,6 +144,21 @@
   --color-info-foreground: var(--info-foreground);
   --color-info-background: var(--info-background);
   --color-info-border: var(--info-border);
+
+  --color-stage-request: var(--stage-request);
+  --color-stage-request-bg: var(--stage-request-bg);
+  --color-stage-reason: var(--stage-reason);
+  --color-stage-reason-bg: var(--stage-reason-bg);
+  --color-stage-github: var(--stage-github);
+  --color-stage-github-bg: var(--stage-github-bg);
+  --color-stage-analyze: var(--stage-analyze);
+  --color-stage-analyze-bg: var(--stage-analyze-bg);
+  --color-stage-jira: var(--stage-jira);
+  --color-stage-jira-bg: var(--stage-jira-bg);
+  --color-stage-verify: var(--stage-verify);
+  --color-stage-verify-bg: var(--stage-verify-bg);
+  --color-stage-slack: var(--stage-slack);
+  --color-stage-slack-bg: var(--stage-slack-bg);
 
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica,
     Arial, sans-serif;
@@ -186,6 +232,43 @@
   /* Result reveal: opacity + 4px translate (200ms); run completion uses 300ms. */
   --animate-reveal: fm-reveal var(--duration-base) var(--ease-standard) both;
   --animate-reveal-slow: fm-reveal var(--duration-slow) var(--ease-standard) both;
+
+  /* Active workflow node: an indeterminate sweep (the node IS running; no fake %). */
+  --animate-sweep: fm-sweep 1.4s var(--ease-standard) infinite;
+  /* Active node halo: a slow, low-amplitude breathing glow. */
+  --animate-halo: fm-halo 2s ease-in-out infinite;
+  /* Status icon arriving at Complete / Failed / Skipped. */
+  --animate-pop: fm-pop 180ms var(--ease-standard) both;
+
+  @keyframes fm-sweep {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(250%);
+    }
+  }
+
+  @keyframes fm-halo {
+    0%,
+    100% {
+      box-shadow: 0 0 0 1px var(--primary), 0 0 0 0 oklch(0.8 0.125 222 / 0);
+    }
+    50% {
+      box-shadow: 0 0 0 1px var(--primary), 0 0 22px 2px oklch(0.8 0.125 222 / 0.22);
+    }
+  }
+
+  @keyframes fm-pop {
+    from {
+      opacity: 0;
+      transform: scale(0.6);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
 
   @keyframes fm-reveal {
     from {
