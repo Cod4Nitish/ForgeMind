@@ -9,6 +9,7 @@ import {
   DotIcon,
   InfoIcon,
   OctagonIcon,
+  SkipIcon,
   Spinner,
   TriangleIcon,
 } from "./icons";
@@ -19,7 +20,18 @@ import { toneChip, toneIcon, toneText } from "./tone";
  * The icon shape differs per status, so color is never the only signal.
  */
 
-export type StatusGlyph = "check" | "cross" | "triangle" | "octagon" | "info" | "dash" | "circle" | "dot" | "spinner" | "start";
+export type StatusGlyph =
+  | "check"
+  | "cross"
+  | "triangle"
+  | "octagon"
+  | "info"
+  | "dash"
+  | "circle"
+  | "dot"
+  | "spinner"
+  | "start"
+  | "skip";
 
 const DEFAULT_GLYPH: Record<DisplayTone, StatusGlyph> = {
   success: "check",
@@ -62,6 +74,8 @@ export function StatusIcon({
       return <Spinner {...props} />;
     case "start":
       return <ArrowRightIcon {...props} />;
+    case "skip":
+      return <SkipIcon {...props} />;
   }
 }
 

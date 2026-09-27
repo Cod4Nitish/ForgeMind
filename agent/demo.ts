@@ -80,7 +80,7 @@ function userRequest(prompt: string): string {
 }
 
 function toolsFor(request: string) {
-  const jira = wants(request, /jira|ticket|task/);
+  const jira = wants(request, /jira|ticket|task|engineering work|work item/);
   const slack = wants(request, /slack|notify|team|alert|message/);
   const github = jira || slack || wants(request, /github|issue|bug|triage|repo|critical|priorit/);
   return { github, jira, slack };

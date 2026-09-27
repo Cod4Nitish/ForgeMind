@@ -75,7 +75,7 @@ export function ExecutionLog({ view, className = "" }: ExecutionLogProps) {
   return (
     <Panel
       headingId="log-heading"
-      title="Live execution"
+      title="Execution events"
       className={`motion-safe:animate-reveal ${className}`}
       aside={
         <p className="text-caption text-foreground-muted tabular-nums">

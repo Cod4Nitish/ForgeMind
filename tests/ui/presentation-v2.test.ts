@@ -292,13 +292,13 @@ describe("buildWorkflow", () => {
   it("success: every node done, Result Complete, durations from real timestamps", () => {
     const nodes = buildWorkflow({ phase: "done", view: toViewModel(successResponse()) });
     expect(nodes.map((n) => [n.key, n.status, n.statusLabel])).toEqual([
-      ["request", "done", "Done"],
-      ["reason", "done", "Done"],
-      ["github", "done", "Done"],
-      ["analyze", "done", "Done"],
-      ["jira", "done", "Done"],
-      ["verify", "done", "Done"],
-      ["slack", "done", "Done"],
+      ["request", "done", "Complete"],
+      ["reason", "done", "Complete"],
+      ["github", "done", "Complete"],
+      ["analyze", "done", "Complete"],
+      ["jira", "done", "Complete"],
+      ["verify", "done", "Complete"],
+      ["slack", "done", "Complete"],
       ["result", "done", "Complete"],
     ]);
     expect(nodes.map((n) => n.durationLabel)).toEqual(["0.0s", "2.0s", "3.0s", "10s", "10s", "5.0s", "8.0s", "41s"]);
@@ -308,8 +308,8 @@ describe("buildWorkflow", () => {
   it("failed at GitHub: downstream not run, Result Failed, no durations for nodes that never ran", () => {
     const nodes = buildWorkflow({ phase: "done", view: toViewModel(failedGithubResponse()) });
     expect(nodes.map((n) => [n.status, n.statusLabel, n.tone])).toEqual([
-      ["done", "Done", "success"],
-      ["done", "Done", "success"],
+      ["done", "Complete", "success"],
+      ["done", "Complete", "success"],
       ["failed", "Failed", "danger"],
       ["not_run", "Not run", "neutral"],
       ["not_run", "Not run", "neutral"],
